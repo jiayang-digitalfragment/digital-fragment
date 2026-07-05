@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Digital Fragment - Large Text Snow Pixel</title>
+<style>
+html,body{
+  margin:0;
+  padding:0;
+  overflow:hidden;
+  background:#000;
+}
+canvas{display:block;}
+</style>
+</head>
+<body>
+<script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>
+<script>
+let particles = [];
+let scrollY = 0;
+let targetScrollY = 0;
+let scrollVelocity = 0;
+
+const maxScroll = 17000;
+
+const poem = [
+  "受到正在上升的太阳的感染",
+  "很快就脱去了上衣 光起了膀子",
+  "一日之计在于晨 小学教师",
+  "玉米地和山岗的队列",
+  "一切都朝着西方慢下来",
+  "所有拖在物体上的影子都慢下来",
+  "活干得很快 这时候世界是快的",
+  "露水干得很快 田鼠逃得很快",
+  "在高地上缓慢地走着 前面是家",
+  "和离开了学校的孩子们会合",
+  "因为土豆已经全部种下",
+  "他们那么缓慢",
+  "河流和树林的队列",
+  "村庄和向日葵的队列",
+  "快速反应着 教室里看不见世界",
+  "也是这样教育学生 他们",
+  "在黄昏中 世界就慢下来",
+  "大地的队伍朝着西方慢下来",
+  "像裹着黑夜之身的丝绸",
+  "一些 昨天剩下的成语",
+  "早晨的语文 在纸上被理解为",
+  "一匹匹滑落下去",
+  "种土豆的人们 拎着工具",
+  "他们不担心时间 孩子们慢吞吞的",
+  "再没有课外作业 大人们慢吞吞的",
+  "直到结束",
+  "只是开始了",
+  "它们不能快也无法慢",
+  "从春天到秋天 在着 不紧不慢",
+  "就要生长着 就要从早到晚",
+  "那在快速中被种下的东西",
+  "并没有慢下来 也从未快过",
+  "仿佛大地进入了他们的身体"
+];
+
+let blackoutUsed = false;
+let blackoutTimer = 0;
+let loopNoticeTimer = 0;
+
+function setup(){
+  createCanvas(windowWidth, windowHeight);
+  textFont("monospace");
+  generateParticles();
+}
+
+function draw(){
+  background(0);
+
+  scrollVelocity = targetScrollY - scrollY;
+  scrollY += scrollVelocity * 0.075;
+
+  let progress = scrollY / maxScroll;
+
+  drawHeader();
+  drawParticles(progress);
+  drawFooter();
+  drawScanNoise(progress);
+  drawOneBlackout(progress);
+  drawLoopNotice();
+}
+
+function mouseWheel(event){
+  targetScrollY += event.delta;
+
+  if(targetScrollY > maxScroll){
+    targetScrollY = maxScroll * 0.58;
+    scrollY = targetScrollY - 200;
+    loopNoticeTimer = 90;
+  }
+
+  if(targetScrollY < 0){
+    targetScrollY = 0;
+  }
+
+  return false;
+}
+
+function touchMoved(){
+  targetScrollY += (pmouseY - mouseY) * 2.2;
+
+  if(targetScrollY > maxScroll){
+    targetScrollY = maxScroll * 0.58;
+    scrollY = targetScrollY - 200;
+    loopNoticeTimer = 90;
+  }
+
+  if(targetScrollY < 0){
+    targetScrollY = 0;
+  }
+
+  return false;
+}
+
+function generateParticles(){
+  particles = [];
+
+  let id = 1;
+  let y = 150;
+
+  let columns = [
+    width * 0.10,
+    width * 0.34,
+    width * 0.58,
+    width * 0.78
+  ];
+
+  // 前段：大字、整齐、数量少
+  for(let section = 0; section < 38; section++){
+    let p = section / 37;
+    let amount;
+    let gap;
+
+    if(p < 0.28){
+      amount = 3;
+      gap = 540;
+    }else if(p < 0.58){
+      amount = floor(map(p, 0.28, 0.58, 4, 8));
+      gap = map(p, 0.28, 0.58, 470, 360);
+    }else if(p < 0.78){
+      amount = floor(map(p, 0.58, 0.78, 8, 12));
+      gap = map(p, 0.58, 0.78, 350, 300);
+    }else{
+      amount = floor(map(p, 0.78, 1, 10, 14));
+      gap = 310;
+    }
+
+    for(let i = 0; i < amount; i++){
+      let base = random(poem);
+      let textContent = base;
+
+      if(p > 0.25 && random() < p * 0.72){
+        textContent = fragmentText(textContent);
+      }
+
+      if(p > 0.48 && random() < p * 0.72){
+        textContent = repeatText(textContent, p);
+      }
+
+      if(p > 0.62){
+        textContent = erodeText(textContent, p);
+      }
+
+      let pos = layoutPosition(p, i, amount, y, columns);
+
+      particles.push({
+        id:nf(id,3),
+        txt:textContent,
+        x:pos.x,
+        y:pos.y,
+        progress:p,
+        time:makeTime(id),
+        speed:random(0.94,1.06),
+        flicker:random(1000),
+        kind:"text",
+        size:getTextSize(p),
+        snow:p > 0.76 && random() < map(p,0.76,1,0.08,0.38)
+      });
+
+      id++;
+    }
+
+    // 参考原文件的“雪花像素”，但只在后段出现
+    let pixelAmount = 0;
+    if(p > 0.50){
+      pixelAmount = floor(map(p, 0.50, 1, 6, 96));
+    }
+
+    for(let j = 0; j < pixelAmount; j++){
+      let col = floor(random(columns.length));
+
+      particles.push({
+        x: columns[col] + random(-40, 260),
+        y: y + random(-80, gap),
+        progress:p,
+        speed:random(0.90,1.12),
+        flicker:random(1000),
+        kind:"pixel",
+        size:random([1.5,2,2.5,3,4])
+      });
+    }
+
+    y += gap;
+  }
+
+  // 最后：完全模仿原文件后段的雪花残片，但保留少量较大的词
+  for(let i = 0; i < 1800; i++){
+    particles.push({
+      x:random(width * 0.06, width * 0.94),
+      y:y + random(0, 5200),
+      progress:1,
+      speed:random(0.86,1.18),
+      flicker:random(1000),
+      kind:random() < 0.82 ? "pixel" : "text",
+      txt:random(["快","慢","春","秋","始","终","影","身","▒","░","_","█","////","____"]),
+      id:nf(id,3),
+      time:makeTime(id),
+      size:random([18,22,28,34,42]),
+      snow:random() < 0.46
+    });
+
+    id++;
+  }
+}
+
+function layoutPosition(p, i, amount, baseY, columns){
+  if(p < 0.28){
+    return {
+      x:width * 0.13,
+      y:baseY + i * 116
+    };
+  }
+
+  if(p < 0.58){
+    let col = i % 2;
+    let row = floor(i / 2);
+    return {
+      x:[width * 0.13, width * 0.52][col],
+      y:baseY + row * 118 + random(-5,5)
+    };
+  }
+
+  if(p < 0.78){
+    let col = i % 3;
+    let row = floor(i / 3);
+    return {
+      x:[width * 0.10, width * 0.37, width * 0.64][col] + random(-8,8),
+      y:baseY + row * 106 + random(-8,8)
+    };
+  }
+
+  let col = floor(random(columns.length));
+  return {
+    x:columns[col] + random(-22,54),
+    y:baseY + random(-50,230)
+  };
+}
+
+function getTextSize(p){
+  if(p < 0.28) return 48;
+  if(p < 0.58) return 48;
+  if(p < 0.78) return map(p,0.58,0.78,46,38);
+  return map(p,0.78,1,36,24);
+}
+
+function drawParticles(globalProgress){
+  for(let item of particles){
+    let sy = item.y - scrollY * item.speed;
+
+    if(sy < -160 || sy > height + 160) continue;
+
+    let p = item.progress;
+    let flicker = sin(frameCount * 0.06 + item.flicker);
+
+    if(item.kind === "pixel"){
+      let alpha = map(p, 0, 1, 0, 180) + flicker * 28;
+      alpha = constrain(alpha, 0, 200);
+
+      let s = item.size * map(p, 0, 1, 0.8, 1.55);
+
+      fill(230, alpha);
+      noStroke();
+
+      let dx = sin(frameCount * 0.025 + item.flicker) * p * 4;
+
+      rect(item.x + dx, sy, s, s);
+      continue;
+    }
+
+    let alpha = map(p, 0, 1, 245, 72);
+    if(p > 0.36){
+      alpha += flicker * map(p, 0.36, 1, 4, 34);
+    }
+    alpha = constrain(alpha, 25, 255);
+
+    let localShake = p > 0.70 ? map(p, 0.70, 1, 0.15, 1.6) : 0;
+    let dx = random(-localShake, localShake);
+    let dy = random(-localShake, localShake);
+
+    let driftX = p > 0.58 ? sin(frameCount * 0.012 + item.flicker) * p * 2.3 : 0;
+
+    textAlign(LEFT, TOP);
+    textSize(item.size);
+    noStroke();
+
+    drawingContext.filter = `blur(${map(p, 0, 1, 0, 0.8)}px)`;
+
+    if(item.snow){
+      drawSnowText(item, item.x + driftX + dx, sy + dy, alpha);
+    }else{
+      fill(235, alpha);
+      text(item.txt, item.x + driftX + dx, sy + dy);
+    }
+
+    drawingContext.filter = "none";
+
+    // 前段保留档案信息
+    if(p < 0.58){
+      fill(150, alpha * 0.58);
+      textSize(15);
+      text("■" + item.id, item.x - 48, sy - 24);
+      text("00:00:" + nf((int(item.id)*2)%60,2), width - 130, sy + 18);
+    }
+  }
+}
+
+function drawSnowText(item, x, y, alpha){
+  let txt = item.txt;
+  let p = item.progress;
+
+  textAlign(LEFT, TOP);
+  textSize(item.size);
+  noStroke();
+
+  // 原字残影
+  fill(235, alpha * 0.36);
+  text(txt, x, y);
+
+  let w = max(textWidth(txt), item.size * 1.2);
+  let h = item.size * 1.15;
+
+  // 像原参考文件一样：字附近产生雪花颗粒
+  let density = floor(map(p, 0.76, 1, 10, 32));
+  fill(235, alpha * 0.58);
+
+  for(let i=0; i<density; i++){
+    let px = x + random(-10, w + 10);
+    let py = y + random(-8, h + 12);
+    let s = random([1.2,1.8,2.4,3.2]);
+    rect(px, py, s, s);
+  }
+
+  // 让文字还能被隐约识别
+  fill(235, alpha * 0.50);
+  let cut = txt.substring(0, max(1, floor(txt.length * random(0.25,0.72))));
+  text(cut, x + random(-8,10), y + random(-6,8));
+
+  // 少量黑色断裂
+  fill(0, alpha * 0.72);
+  for(let j=0; j<2; j++){
+    rect(x + random(0, w * 0.75), y + random(0, h), random(20,70), random(2,5));
+  }
+}
+
+function drawOneBlackout(progress){
+  if(!blackoutUsed && progress > 0.64){
+    blackoutTimer = 10;
+    blackoutUsed = true;
+  }
+
+  if(blackoutTimer > 0){
+    fill(0, 210);
+    rect(0,0,width,height);
+    blackoutTimer--;
+  }
+}
+
+function drawLoopNotice(){
+  if(loopNoticeTimer <= 0) return;
+
+  let alpha = map(loopNoticeTimer,90,0,160,0);
+  fill(230,alpha);
+  textAlign(CENTER,CENTER);
+  textSize(14);
+  text("LOADING", width/2, height/2);
+  loopNoticeTimer--;
+}
+
+function drawHeader(){
+  fill(225);
+  textSize(20);
+  textAlign(LEFT,TOP);
+  text("DIGITAL COPY // FRAGMENT // PIXEL ERROR", 28, 34);
+
+  textAlign(RIGHT,TOP);
+  text("SCROLL TO READ", width - 28, 34);
+
+  stroke(85);
+  line(28,68,width-28,68);
+  noStroke();
+  textAlign(LEFT,TOP);
+}
+
+function drawFooter(){
+  fill(130);
+  textSize(16);
+  textAlign(LEFT,TOP);
+  text("REPEATED / CUT / MISREAD / PIXELATED / ERODED", 28, height - 42);
+}
+
+function drawScanNoise(progress){
+  if(progress < 0.25) return;
+
+  if(frameCount % 18 === 0 || scrollVelocity > 78){
+    fill(255, map(progress,0,1,5,22));
+    noStroke();
+    rect(0, random(height), width, 1);
+  }
+
+  if(progress > 0.72 && abs(scrollVelocity) > 105 && random() < 0.004){
+    fill(255, 12);
+    rect(0,0,width,height);
+  }
+}
+
+function fragmentText(str){
+  if(str.length < 5) return str;
+  let start = floor(random(0, str.length * 0.58));
+  let len = floor(random(2, str.length * 0.58));
+  return str.substring(start, start + len);
+}
+
+function repeatText(str, p){
+  let words = ["快","慢","受到","春天","结束"];
+  for(let w of words){
+    if(str.includes(w) && random() < p){
+      str = str.split(w).join(w + " " + w);
+    }
+  }
+  return str;
+}
+
+function erodeText(str, p){
+  let result = "";
+  for(let i=0; i<str.length; i++){
+    let ch = str.charAt(i);
+    let r = random();
+
+    if(p > 0.86 && r < 0.24){
+      result += random(["▒","░","█","_"," "," "]);
+    }else if(p > 0.70 && r < 0.12){
+      result += random(["▒","_"," ",ch]);
+    }else if(p > 0.52 && r < 0.06){
+      result += " ";
+    }else{
+      result += ch;
+    }
+  }
+  return result;
+}
+
+function makeTime(i){
+  let sec = i * 2;
+  let m = floor(sec / 60);
+  let s = sec % 60;
+  return "00:" + nf(m,2) + ":" + nf(s,2);
+}
+
+function windowResized(){
+  resizeCanvas(windowWidth, windowHeight);
+  generateParticles();
+}
+</script>
+</body>
+</html>
